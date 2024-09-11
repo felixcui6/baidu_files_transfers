@@ -57,6 +57,21 @@ def get_dir_list(bdstoken, dir='/'):
     return name_list
 
 
+def get_dir_list_recursive(bdstoken, dir='/'):
+    # 递归获取云盘目录列表函数
+    name_list = []
+    curr_name_info_list = get_dir_list(bdstoken, dir)
+    for curr_name_info in curr_name_info_list:
+        if curr_name_info['isdir'] == 1:
+            time.sleep(round(random.uniform(0.001, 2.01), 3))
+            curr_name_list = get_dir_list_recursive(bdstoken, curr_name_info['path'])
+            name_list += curr_name_list
+        else:
+            name_list.append(curr_name_info['path'])
+    print(len(name_list), dir)
+    return name_list
+
+
 def get_share_dir_list(user_id, share_id, share_dir_name):
     # 获取分享链接目录列表函数
     fs_id_list = []
@@ -74,6 +89,21 @@ def get_share_dir_list(user_id, share_id, share_dir_name):
             break
         page += 1
     return fs_id_list
+
+
+def get_share_dir_list_recursive(user_id, share_id, share_dir_name):
+    # 递归获取分享链接目录列表函数
+    name_list = []
+    curr_name_info_list = get_share_dir_list(user_id, share_id, share_dir_name)
+    for curr_name_info in curr_name_info_list:
+        if curr_name_info['isdir'] == 1:
+            time.sleep(round(random.uniform(0.001, 2.01), 3))
+            curr_name_list = get_share_dir_list_recursive(user_id, share_id, curr_name_info['path'])
+            name_list += curr_name_list
+        else:
+            name_list.append(curr_name_info['path'])
+    print(len(name_list), share_dir_name)
+    return name_list
 
 
 def check_links(link_url, pass_code, bdstoken):
@@ -112,53 +142,11 @@ def check_links(link_url, pass_code, bdstoken):
         return [shareid_list[0], user_id_list[0], fs_id_list, server_filedir[0]]
 
 
-def create_dir(dir_name, bdstoken):
-    # 新建目录函数
-    url = 'https://pan.baidu.com/api/create?a=commit&bdstoken=' + bdstoken
-    post_data = {'path': dir_name, 'isdir': '1', 'block_list': '[]', }
-    response = s.post(url=url, headers=request_header, data=post_data, timeout=15, allow_redirects=False, verify=False)
-    print(post_data)
-    return response.json()['errno']
-
-
-def transfer_files(user_id, share_id, fs_id_list, dir_name, bdstoken):
-    # 转存文件函数
-    url = f'https://pan.baidu.com/share/transfer?shareid={share_id}&from={user_id}&bdstoken={bdstoken}&channel=chunlei&web=1&clienttype=0'
-
-    fs_id = ','.join(i for i in fs_id_list)
-    post_data = {'fsidlist': '[' + fs_id + ']', 'path': dir_name, }
-    print(post_data, url)
-    response = s.post(url=url, headers=request_header, data=post_data, timeout=15, allow_redirects=False, verify=False)
-    print(response.text)
-    return response.json()['errno']
-
-
 def check_link_type(link_list_line):
     # 检测链接种类
     if link_list_line.find('https://pan.baidu.com/s/') >= 0:
         link_type = '/s/'
     return link_type
-
-
-def recursive_transfer_files(user_id, share_id, fs_id_list, share_dir_name, local_dir_name, bdstoken):
-    # 递归转存文件函数
-    # 执行转存文件
-    transfer_files_reason = transfer_files(user_id, share_id, fs_id_list, os.path.dirname(local_dir_name+share_dir_name), bdstoken)
-    if transfer_files_reason == 0:
-        print(f'转存成功\n')
-    elif transfer_files_reason == -4:
-        print(f'转存失败,无效登录.请退出账号在其他地方的登录\n')
-    elif transfer_files_reason == 4 or transfer_files_reason == -8:
-        print(f'转存失败,目录中已有同名文件或文件夹存在\n')
-    elif transfer_files_reason == 12:
-        print(f'转存失败,转存文件数超过限制\n, 开始分批转存......')
-        new_fs_id_list = get_share_dir_list(user_id, share_id, share_dir_name)
-        create_dir(''.join([local_dir_name, share_dir_name]), bdstoken)
-        if new_fs_id_list:
-            for curr_fs_id_list in new_fs_id_list:
-                time.sleep(round(random.uniform(0.001, 5.01), 3))
-                print(fs_id_list,"sleeptime: ",round(random.uniform(0.001, 5.01), 3))
-                recursive_transfer_files(user_id, share_id, [str(curr_fs_id_list['fs_id'])], curr_fs_id_list['path'], local_dir_name, bdstoken)
 
 
 def main():
@@ -197,19 +185,6 @@ def main():
             print('没获取到bdstoken,错误代码:' + str(bdstoken) + '\n')
             sys.exit()
 
-        # 执行获取本人网盘目录列表
-        dir_list_json = get_dir_list(bdstoken)
-        if type(dir_list_json) != list:
-            print('没获取到网盘目录列表,请检查cookie和网络后重试.' + '\n')
-            sys.exit()
-        # 执行新建目录
-        dir_list = [dir_json['server_filename'] for dir_json in dir_list_json]
-        if dir_name and dir_name not in dir_list:
-            create_dir_reason = create_dir(dir_name, bdstoken)
-            if create_dir_reason != 0:
-                print('文件夹名带非法字符,请改正文件夹名称后重试.' + '\n')
-                sys.exit()
-
         # 执行转存
         # 处理http链接
         link_url = link_url.replace("http://", "https://")
@@ -226,12 +201,24 @@ def main():
             link_url_org, pass_code_org = re.sub(r'提取码*[：:](.*)', r'\1', link_url.lstrip()).split(' ', maxsplit=1)
             [link_url, pass_code] = [link_url_org.strip()[:47], pass_code_org.strip()[:4]]
             shareid_list,user_id_list,fs_id_list,server_filedir = check_links(link_url, pass_code, bdstoken)
-            recursive_transfer_files(user_id_list, shareid_list, fs_id_list, '/'+server_filedir, '/' + dir_name, bdstoken)
+            local_name_list = get_dir_list_recursive(bdstoken, dir='/' + dir_name)
+            for i in range(len(local_name_list)):
+                local_name_list[i] = local_name_list[i].replace('/' + dir_name, '')
+            share_name_list = get_share_dir_list_recursive(user_id_list, shareid_list, '/' + server_filedir)
+            print(f'local_name_list: {len(local_name_list)} share_name_list: {len(share_name_list)}')
+            print(f'set(local_name_list) - set(share_name_list): {set(local_name_list) - set(share_name_list)}')
+            print(f'set(share_name_list) - set(local_name_list): {set(share_name_list) - set(local_name_list)}')
         else:
             print('访问链接返回错误代码(' + str(check_links_reason) + '):' + link_url + '\n')
     except:
         print(traceback.format_exc())
 
 
-if __name__ == '__main__':
-    main()
+# if __name__ == '__main__':
+#     main()
+dir_name = 'test'
+cookie = 'csrfToken=Ys3aRktUiQ1aWxzUQIacIuhg; newlogin=1; BAIDUID=9BDD1ED0995C1E6F5AF80D8C5F235DD7:FG=1; BAIDUID_BFESS=9BDD1ED0995C1E6F5AF80D8C5F235DD7:FG=1; PANWEB=1; BDCLND=qUjoS8RZJWEKG0PUw4aTuN7IxJmQWaSMf2MApgfADGA%3D; ppfuid=FOCoIC3q5fKa8fgJnwzbE67EJ49BGJeplOzf+4l4EOvDuu2RXBRv6R3A1AZMa49I27C0gDDLrJyxcIIeAeEhD8JYsoLTpBiaCXhLqvzbzmvy3SeAW17tKgNq/Xx+RgOdb8TWCFe62MVrDTY6lMf2GrfqL8c87KLF2qFER3obJGn/QJMAwAPnqrAi45EBm1RGGEimjy3MrXEpSuItnI4KD5Kz0OWHDV87PQYRgEJjruZR4EaoY7dI60LOhq0HnLAJnPxlzwwy/GE1pBh21yFP1qnPhnaNMbTaYSKjVNEhoO/GgLbz7OSojK1zRbqBESR5Pdk2R9IA3lxxOVzA+Iw1TWLSgWjlFVG9Xmh1+20oPSbrzvDjYtVPmZ+9/6evcXmhcO1Y58MgLozKnaQIaLfWRA57rx/FqioD0jqtzyIkIrRSIyIsinQgrPBhVij7Jkrqt7K5jarLOWfD4m/czrcWX3eTNkbS2el0J2+pbyoXJb2gmGOupR9UnwrGA53MVEjRyF55yJEjttlLrWbPAsm9PnhchaSS27hNjpZcLp/IquiTVlyhJ3JXC6kz0QN46eBgz3redDooeLsg11MmhD7jfQaWR5MtmI9nwC4IX4+AvxFueLi0CGaDIQ+QtviUPhX6IF77Dy6yZYDs9YiLioS5IcJpB4bbKxkZr8ZftVYDKWsPOjTvdUJPjdjysFvUHB4mxEED2EBogeW4Pi7LyMotGwkDkjrw7dIOL8eH+akLvTHFYKgGjSgGJg717FXp0wr86a78d24iG0Dtj5SGbPVUixS1vkCXRE9P3n0EwCZJIui90MYHseSGGAb9EEU03OSmbdOT2sun9ZNE1p5JD8fhH17hoY6OdNjT1InhfHXduVLvy2Rt8UlM5usdnb8SHq9GfVomUyetEVgvZpc0nX6wCCfPXXHe2T94hm7JZTBn14F/RznCAxZOh2T1M5RJzFErRK7rlDVpWh8nCIUULCLnjeZ5igGesIfFJE3Z8qG4UZ2aJy8I5nmKWZQG3/B2qm/IBa4AVsxzVOk1vFBmIIXr9vX5IiUZ2pp0YUgVHUwzBuigoNsVQ4+xATvb9rSQRYLYqG48osz3/p1nTSKxY/UzvVhUr4ZyuJhd1Iax1Mu5rZniuyIylJyI7LQa0fQEMhodE4E1Qga6zXe+TcEP3N12POP1kmx5SXPARX5uxyJzAiNILBC8zh7fGfNXOWV37O9g3SrtjD7HHm73k9KjP6c7zyz1OqOlLYK4Zd6grclXRmxxGQV+roQ+0nE4U83L/UBOqmFU2Ekb/vTs/YZwJiVxHg==; BDUSS=UI5aUlvV3JnTTcxbnd5c1VKTjhweVY0RUNNNzY3ODZnV2tSSFVldTIwaklRd1puRVFBQUFBJCQAAAAAAAAAAAEAAAAyiMkb27vc6b~xzb0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMi23mbItt5mQ; BDUSS_BFESS=UI5aUlvV3JnTTcxbnd5c1VKTjhweVY0RUNNNzY3ODZnV2tSSFVldTIwaklRd1puRVFBQUFBJCQAAAAAAAAAAAEAAAAyiMkb27vc6b~xzb0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMi23mbItt5mQ; STOKEN=28f15aeab2d65a2f7d71fb03fcd5f478b78cb8633c360fb2bf2d118a65426399; BIDUPSID=9BDD1ED0995C1E6F5AF80D8C5F235DD7; PSTM=1725871838; H_PS_PSSID=60279_60600_60677_60747_60360_60748; BA_HECTOR=a48k202g8k01258h802ga5a5bg32i01jdtdn01u; ZFY=OiYq2MANpOhIzt:BjJdpc0lYAKgsk:BlohBJeGosiU:AWM:C; PANPSC=6040124262865827928%3ACU2JWesajwBSZ62Ew64QLZgtJeEFa7WQuzxdF53m%2FHDMGyfnJI4RSqtfDddEaAbfoz9WvknWWmyaV1QHy3lx29MuAU8GN%2BM3cDLxProYXADVjK%2FWMMIrwy4gEgnMs7UuDtTCc6ZqWjEXfR0R3av0%2B9S%2BWAjVfacz0v29HoOyBxO7W09FU%2BvrLt8NRd7EA5d%2B2fNZfjs7wBY%2FcoIBUQpA2juoAeCl9TBG; ndut_fmt=A21D80571BA680880630A44C54DBA68CE111EF13A9F2E86C83EC8470A6E98EB8; ab_sr=1.0.1_MGFlNDUxNGE2M2NmNmE0ZTZiYzI3MWVlZDAzOThmMzM1MTU3ZjIwNmY4MDkxM2FhMzU1MWEzNTI4MTM3YmU1YTllNjBiODEwOGIyY2M5NmI3NmQ3ZjA4OTk5N2IyNjE1ZDFiYjk5ZWVlYTg2OGYzMmY4NmExNzM5ZjgzZTRiMDhmOTRmNWMyMDMwNWYxNDgwYjJkZmU2OGZkZDhlZTk1ODAxZTNkNWFjMDhlNWFmZDUxMDY1ZWI3M2UyMzliMWNl'
+link_url, pass_code = 'https://pan.baidu.com/s/1GfsNzOD6XSj6hUWBnfGojw', '624a'
+request_header['Cookie'] = cookie
+bdstoken = get_bdstoken()
+shareid_list,user_id_list,fs_id_list,server_filedir = check_links(link_url, pass_code, bdstoken)
